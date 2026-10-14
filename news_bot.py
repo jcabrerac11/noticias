@@ -63,4 +63,5 @@ def buscar_noticias():
 
 
 if __name__ == "__main__":
-    buscar_noticias()
+    enviar_telegram("🤖 ¡Hola! Probando conexión del Bot de Noticias Ecuador.")
+    # buscar_noticias()
