@@ -1,5 +1,4 @@
 name: Bot de Noticias Ecuador
-
 on:
   schedule:
     # Se ejecuta cada hora (formato cron UTC)
