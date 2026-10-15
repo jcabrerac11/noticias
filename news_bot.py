@@ -1,6 +1,8 @@
 import os
 import sqlite3
+import time
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 import feedparser
 import requests
 
@@ -63,53 +65,73 @@ def enviar_telegram(mensaje):
         print(f"Error enviando mensaje: {e}")
 
 
+def es_noticia_reciente(published_parsed, horas_maximas=24):
+    """Verifica si la noticia fue publicada dentro de las últimas 24 horas"""
+    if not published_parsed:
+        return True  # Si no hay fecha en el feed, se procesa por defecto
+
+    # Convertir la fecha de publicación a datetime UTC
+    fecha_noticia = datetime.fromtimestamp(
+        time.mktime(published_parsed), tz=timezone.utc
+    )
+    fecha_limite = datetime.now(timezone.utc) - timedelta(hours=horas_maximas)
+
+    return fecha_noticia >= fecha_limite
+
+
 def buscar_noticias_google():
-    """Busca noticias generales en Google News"""
+    """Busca noticias en Google News restringidas a las últimas 24 horas (when:1d)"""
     for kw in KEYWORDS:
-        query = urllib.parse.quote(f"{kw} Ecuador")
+        # Añadimos 'when:1d' para filtrar la búsqueda a las últimas 24 horas
+        query = urllib.parse.quote(f"{kw} Ecuador when:1d")
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
 
         feed = feedparser.parse(rss_url)
         for entry in feed.entries:
             link = entry.link
             title = entry.title
+            published_parsed = entry.get("published_parsed")
 
+            # Validar que no se haya enviado Y que sea de las últimas 24h
             if not ya_enviada(link):
-                mensaje = (
-                    f"📰 <b>Noticia en Prensa ({kw.capitalize()})</b>\n\n"
-                    f"{title}\n\n"
-                    f"🔗 <a href='{link}'>Leer en el medio original</a>"
-                )
-                enviar_telegram(mensaje)
+                if es_noticia_reciente(published_parsed, horas_maximas=24):
+                    mensaje = (
+                        f"📰 <b>Noticia en Prensa ({kw.capitalize()})</b>\n\n"
+                        f"{title}\n\n"
+                        f"🔗 <a href='{link}'>Leer en el medio original</a>"
+                    )
+                    enviar_telegram(mensaje)
+                # Se registra para evitar evaluarla en las siguientes ejecuciones
                 registrar_enviada(link)
 
 
 def buscar_noticias_facebook():
-    """Busca publicaciones en las páginas públicas de Facebook configuradas"""
+    """Busca publicaciones recientes en Facebook"""
     for fb in FACEBOOK_FEEDS:
         if "PEGA_AQUI" in fb["url"]:
-            continue  # Salta si no has puesto una URL válida aún
+            continue
 
         feed = feedparser.parse(fb["url"])
         for entry in feed.entries:
             link = entry.link
-            # Tomamos los primeros 250 caracteres del post para el resumen
             contenido = (
                 entry.get("summary", entry.get("title", ""))[:250] + "..."
             )
+            published_parsed = entry.get("published_parsed")
 
             if not ya_enviada(link):
-                mensaje = (
-                    f"🔵 <b>Publicación en Facebook ({fb['nombre']})</b>\n\n"
-                    f"{contenido}\n\n"
-                    f"🔗 <a href='{link}'>Ver publicación en Facebook</a>"
-                )
-                enviar_telegram(mensaje)
+                if es_noticia_reciente(published_parsed, horas_maximas=24):
+                    mensaje = (
+                        f"🔵 <b>Publicación en Facebook ({fb['nombre']})</b>\n\n"
+                        f"{contenido}\n\n"
+                        f"🔗 <a href='{link}'>Ver publicación en Facebook</a>"
+                    )
+                    enviar_telegram(mensaje)
                 registrar_enviada(link)
 
 
 if __name__ == "__main__":
-    print("Iniciando búsqueda de noticias...")
+    print("Iniciando búsqueda de noticias recientes (últimas 24h)...")
     buscar_noticias_google()
     buscar_noticias_facebook()
     print("Búsqueda finalizada.")
