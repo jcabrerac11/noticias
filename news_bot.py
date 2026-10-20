@@ -9,7 +9,18 @@ import requests
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-KEYWORDS = ["Posorja", "El Morro", "Progreso", "Chongón", "Chongon", "Cerecita", "Vía a Playas", "Vía a la Costa"]
+KEYWORDS = [
+    "Posorja",
+    "El Morro",
+    "Progreso",
+    "Chongón",
+    "Chongon",
+    "Cerecita",
+    "Vía a Playas",
+    "Via a Playas",
+    "Vía a la Costa",
+    "Via a la Costa",
+]
 
 FACEBOOK_FEEDS = [
     {
@@ -29,6 +40,7 @@ FACEBOOK_FEEDS = [
         "url": "https://fetchrss.com/feed/1xH4z8ASAFsI1xH5Fe3Og78N.rss",
     },
 ]
+
 # Base de datos SQLite local
 conn = sqlite3.connect("noticias.db")
 cursor = conn.cursor()
@@ -44,6 +56,12 @@ def ya_enviada(link):
 def registrar_enviada(link):
     cursor.execute("INSERT INTO enviadas VALUES (?)", (link,))
     conn.commit()
+
+
+def es_de_ubicacion_interes(texto):
+    """Verifica si el título o resumen contiene al menos una de las ubicaciones objetivo."""
+    texto_lc = texto.lower()
+    return any(kw.lower() in texto_lc for kw in KEYWORDS)
 
 
 def enviar_telegram(mensaje):
@@ -66,11 +84,10 @@ def enviar_telegram(mensaje):
 
 
 def es_noticia_reciente(published_parsed, horas_maximas=24):
-    """Verifica si la noticia fue publicada dentro de las últimas 24 horas"""
+    """Verifica si la noticia fue publicada dentro de las últimas 24 horas."""
     if not published_parsed:
         return True  # Si no hay fecha en el feed, se procesa por defecto
 
-    # Convertir la fecha de publicación a datetime UTC
     fecha_noticia = datetime.fromtimestamp(
         time.mktime(published_parsed), tz=timezone.utc
     )
@@ -80,28 +97,37 @@ def es_noticia_reciente(published_parsed, horas_maximas=24):
 
 
 def buscar_noticias_google():
-    """Busca noticias en Google News restringidas a las últimas 24 horas (when:1d)"""
+    """Busca noticias en Google News con filtro exacto de ubicación y tiempo."""
     for kw in KEYWORDS:
-        # Añadimos 'when:1d' para filtrar la búsqueda a las últimas 24 horas
-        query = urllib.parse.quote(f"{kw} Ecuador when:1d")
+        # 1. Comillas exactas f'"{kw}"' para evitar búsquedas ambiguas en Google
+        query = urllib.parse.quote(f'"{kw}" when:1d')
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
 
         feed = feedparser.parse(rss_url)
         for entry in feed.entries:
             link = entry.link
             title = entry.title
+            summary = entry.get("summary", "")
             published_parsed = entry.get("published_parsed")
 
-            # Validar que no se haya enviado Y que sea de las últimas 24h
+            texto_completo = f"{title} {summary}"
+
             if not ya_enviada(link):
-                if es_noticia_reciente(published_parsed, horas_maximas=24):
+                # 2. Doble validación: reciente Y que mencione explícitamente tus zonas
+                if es_noticia_reciente(
+                    published_parsed, horas_maximas=24
+                ) and es_de_ubicacion_interes(texto_completo):
                     mensaje = (
                         f"📰 <b>Noticia en Prensa ({kw.capitalize()})</b>\n\n"
                         f"{title}\n\n"
                         f"🔗 <a href='{link}'>Leer en el medio original</a>"
                     )
                     enviar_telegram(mensaje)
-                # Se registra para evitar evaluarla en las siguientes ejecuciones
+                else:
+                    print(
+                        f"🚫 Descartada noticia irrelevante o fuera de zona: {title}"
+                    )
+
                 registrar_enviada(link)
 
 
