@@ -36,3 +36,16 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python news_bot.py
+
+      - name: Generar Dashboard Web
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python generar_dashboard.py
+
+      - name: Guardar cambios y publicar en GitHub Pages
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add noticias.db index.html
+          git commit -m "Actualización del Dashboard de Inteligencia" || exit 0
+          git push
