@@ -44,7 +44,15 @@ FACEBOOK_FEEDS = [
 # Base de datos SQLite local
 conn = sqlite3.connect("noticias.db")
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS enviadas (link TEXT PRIMARY KEY)")
+cursor.execute(
+    """
+CREATE TABLE IF NOT EXISTS noticias_detalles (
+    link TEXT PRIMARY KEY,
+    titulo TEXT,
+    fecha TEXT
+)
+"""
+)
 conn.commit()
 
 
@@ -52,7 +60,17 @@ def ya_enviada(link):
     cursor.execute("SELECT 1 FROM enviadas WHERE link = ?", (link,))
     return cursor.fetchone() is not None
 
-
+# NUEVA FUNCIÓN: Registra los detalles completos para el Dashboard y previene duplicados
+def registrar_noticia_completa(link, titulo):
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute(
+        "INSERT OR IGNORE INTO noticias_detalles VALUES (?, ?, ?)",
+        (link, titulo, fecha_actual),
+    )
+    cursor.execute(
+        "INSERT OR IGNORE INTO enviadas VALUES (?)", (link,)
+    )  # Mantiene la tabla antigua activa
+    conn.commit()
 def registrar_enviada(link):
     cursor.execute("INSERT INTO enviadas VALUES (?)", (link,))
     conn.commit()
