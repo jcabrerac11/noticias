@@ -99,10 +99,11 @@ def es_noticia_reciente(published_parsed, horas_maximas=24):
 def buscar_noticias_google():
     """Busca noticias en Google News con filtro exacto de ubicación y tiempo."""
     for kw in KEYWORDS:
+        # Añadimos "Ecuador" a la consulta para forzar el contexto nacional
         # 1. Comillas exactas f'"{kw}"' para evitar búsquedas ambiguas en Google
-        query = urllib.parse.quote(f'"{kw}" when:1d')
+        query = urllib.parse.quote(f'"{kw}" Ecuador when:1d')
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
-
+        
         feed = feedparser.parse(rss_url)
         for entry in feed.entries:
             link = entry.link
