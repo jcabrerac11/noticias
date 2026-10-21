@@ -42,10 +42,8 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python generar_dashboard.py
 
-      - name: Guardar cambios y publicar en GitHub Pages
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add noticias.db index.html
-          git commit -m "Actualización del Dashboard de Inteligencia" || exit 0
-          git push
+      - name: Sincronizar y publicar cambios
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Actualización automática del Dashboard y base de datos"
+          file_pattern: "index.html noticias.db"
