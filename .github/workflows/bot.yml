@@ -42,10 +42,16 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python generar_dashboard.py
 
+      - name: Sincronizar cambios del repositorio remoto
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git pull origin main --rebase || git rebase --skip
+
       - name: Sincronizar y publicar cambios
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Actualización automática del Dashboard y base de datos"
           file_pattern: "index.html noticias.db"
-          skip_fetch: false
-          internal_git_options: '--rebase'
+          skip_fetch: true
