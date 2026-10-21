@@ -20,6 +20,7 @@ KEYWORDS = [
     "Via a Playas",
     "Vía a la Costa",
     "Via a la Costa",
+    "Ciudad de Dios",
 ]
 
 FACEBOOK_FEEDS = [
@@ -174,7 +175,34 @@ def buscar_noticias_facebook():
                     enviar_telegram(mensaje)
                 registrar_enviada(link)
 
+def buscar_noticias_youtube():
+    """Busca transmisiones en vivo y videos de noticias recientes en YouTube sobre tus sectores."""
+    for kw in KEYWORDS:
+        # Operador site:youtube.com + "live" para priorizar transmisiones e informes en vivo
+        query = urllib.parse.quote(f'site:youtube.com "{kw}" live Ecuador when:1d')
+        rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
 
+        feed = feedparser.parse(rss_url)
+        for entry in feed.entries:
+            link = entry.link
+            title = entry.title
+            published_parsed = entry.get("published_parsed")
+
+            if not ya_enviada(link):
+                if es_noticia_reciente(
+                    published_parsed, horas_maximas=24
+                ) and es_de_ubicacion_interes(title):
+                    mensaje = (
+                        f"🔴 <b>Transmisión / Video en YouTube ({kw.capitalize()})</b>\n\n"
+                        f"{title}\n\n"
+                        f"🎬 <a href='{link}'>Ver en YouTube</a>"
+                    )
+                    enviar_telegram(mensaje)
+
+                # Registrar para el Dashboard y evitar duplicados
+                registrar_noticia_completa(
+                    link, f"YouTube: {title[:60]}"
+                )
 if __name__ == "__main__":
     print("Iniciando búsqueda de noticias recientes (últimas 24h)...")
     buscar_noticias_google()
