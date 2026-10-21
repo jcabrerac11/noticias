@@ -9,25 +9,37 @@ import requests
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-KEYWORDS = [
-    "Posorja",
-    "El Morro",
-    "Progreso",
-    "Chongón",
-    "Chongon",
-    "Cerecita",
-    "Vía a Playas",
-    "Via a Playas",
-    "Vía a la Costa",
-    "Via a la Costa",
-    "Ciudad de Dios",
-    "San Isidro",
-    "San Antonio",
-    "Safando",
-    "San Lorenzo",
-    "Vía a san juan",
-    "Vía a san antonio",
+# Sectores principales de la zona de cobertura
+SECTORES_PRINCIPALES = [
+    "posorja",
+    "el morro",
+    "progreso",
+    "chongón",
+    "chongon",
+    "cerecita",
+    "vía a playas",
+    "via a playas",
+    "vía a la costa",
+    "via a la costa",
 ]
+
+# Recintos y barrios (nombres comunes que requieren confirmación de provincia/zona)
+RECINTOS_SECUNDARIOS = [
+    "ciudad de dios",
+    "san isidro",
+    "san antonio",
+    "safando",
+    "san lorenzo",
+    "vía a san juan",
+    "via a san juan",
+    "vía a san antonio",
+    "via a san antonio",
+]
+
+KEYWORDS = SECTORES_PRINCIPALES + RECINTOS_SECUNDARIOS
+
+# Palabras clave de control para confirmar que es de Ecuador / Guayas
+CONTEXTO_ECUADOR = ["ecuador", "guayas", "guayaquil", "playas"]
 
 FACEBOOK_FEEDS = [
     {
@@ -60,6 +72,7 @@ CREATE TABLE IF NOT EXISTS noticias_detalles (
 )
 """
 )
+cursor.execute("CREATE TABLE IF NOT EXISTS enviadas (link TEXT PRIMARY KEY)")
 conn.commit()
 
 
@@ -67,26 +80,46 @@ def ya_enviada(link):
     cursor.execute("SELECT 1 FROM enviadas WHERE link = ?", (link,))
     return cursor.fetchone() is not None
 
-# NUEVA FUNCIÓN: Registra los detalles completos para el Dashboard y previene duplicados
+
 def registrar_noticia_completa(link, titulo):
     fecha_actual = datetime.now().strftime("%Y-%m-%d")
     cursor.execute(
         "INSERT OR IGNORE INTO noticias_detalles VALUES (?, ?, ?)",
         (link, titulo, fecha_actual),
     )
-    cursor.execute(
-        "INSERT OR IGNORE INTO enviadas VALUES (?)", (link,)
-    )  # Mantiene la tabla antigua activa
+    cursor.execute("INSERT OR IGNORE INTO enviadas VALUES (?)", (link,))
     conn.commit()
+
+
 def registrar_enviada(link):
-    cursor.execute("INSERT INTO enviadas VALUES (?)", (link,))
+    cursor.execute("INSERT OR IGNORE INTO enviadas VALUES (?)", (link,))
     conn.commit()
 
 
 def es_de_ubicacion_interes(texto):
-    """Verifica si el título o resumen contiene al menos una de las ubicaciones objetivo."""
+    """Filtra noticias asegurando que correspondan a la zona objetivo en Ecuador/Guayas."""
     texto_lc = texto.lower()
-    return any(kw.lower() in texto_lc for kw in KEYWORDS)
+
+    # 1. Comprobar si menciona alguno de los sectores principales
+    tiene_sector_principal = any(
+        sp in texto_lc for sp in SECTORES_PRINCIPALES
+    )
+
+    # 2. Comprobar si menciona algún recinto de nombre común
+    tiene_recinto = any(rec in texto_lc for rec in RECINTOS_SECUNDARIOS)
+
+    # 3. Comprobar contexto nacional/provincial
+    tiene_contexto_local = any(ctx in texto_lc for ctx in CONTEXTO_ECUADOR)
+
+    # Regla A: Si menciona un sector principal Y tiene contexto de Ecuador/Guayas -> VÁLIDO
+    if tiene_sector_principal and tiene_contexto_local:
+        return True
+
+    # Regla B: Si menciona un recinto común (ej. San Antonio), debe mencionar también Guayas/Ecuador o la zona
+    if tiene_recinto and (tiene_contexto_local or tiene_sector_principal):
+        return True
+
+    return False
 
 
 def enviar_telegram(mensaje):
@@ -111,7 +144,7 @@ def enviar_telegram(mensaje):
 def es_noticia_reciente(published_parsed, horas_maximas=24):
     """Verifica si la noticia fue publicada dentro de las últimas 24 horas."""
     if not published_parsed:
-        return True  # Si no hay fecha en el feed, se procesa por defecto
+        return True
 
     fecha_noticia = datetime.fromtimestamp(
         time.mktime(published_parsed), tz=timezone.utc
@@ -122,13 +155,12 @@ def es_noticia_reciente(published_parsed, horas_maximas=24):
 
 
 def buscar_noticias_google():
-    """Busca noticias en Google News con filtro exacto de ubicación y tiempo."""
+    """Busca noticias en Google News con filtro exacto de ubicación en Guayas/Ecuador."""
     for kw in KEYWORDS:
-        # Añadimos "Ecuador" a la consulta para forzar el contexto nacional
-        # 1. Comillas exactas f'"{kw}"' para evitar búsquedas ambiguas en Google
-        query = urllib.parse.quote(f'"{kw}" Ecuador when:1d')
+        # Búsqueda estructurada exigiendo la palabra exacta + contexto geográfico de Ecuador
+        query = urllib.parse.quote(f'"{kw}" (Guayas OR Guayaquil OR Ecuador) when:1d')
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
-        
+
         feed = feedparser.parse(rss_url)
         for entry in feed.entries:
             link = entry.link
@@ -139,12 +171,11 @@ def buscar_noticias_google():
             texto_completo = f"{title} {summary}"
 
             if not ya_enviada(link):
-                # 2. Doble validación: reciente Y que mencione explícitamente tus zonas
                 if es_noticia_reciente(
                     published_parsed, horas_maximas=24
                 ) and es_de_ubicacion_interes(texto_completo):
                     mensaje = (
-                        f"📰 <b>Noticia en Prensa ({kw.capitalize()})</b>\n\n"
+                        f"📰 <b>Noticia en Prensa ({kw.title()})</b>\n\n"
                         f"{title}\n\n"
                         f"🔗 <a href='{link}'>Leer en el medio original</a>"
                     )
@@ -154,17 +185,17 @@ def buscar_noticias_google():
                         f"🚫 Descartada noticia irrelevante o fuera de zona: {title}"
                     )
 
-                registrar_enviada(link)
+                registrar_noticia_completa(link, title)
 
 
 def buscar_noticias_facebook():
-    """Busca publicaciones recientes en Facebook"""
+    """Busca publicaciones recientes en Facebook restringidas a la zona."""
     for fb in FACEBOOK_FEEDS:
         if "PEGA_AQUI" in fb["url"]:
             continue
 
         feed = feedparser.parse(fb["url"])
-        for entry in feed.entries:
+        for entry in fb.entries if hasattr(fb, 'entries') else feed.entries:
             link = entry.link
             contenido = (
                 entry.get("summary", entry.get("title", ""))[:250] + "..."
@@ -172,20 +203,26 @@ def buscar_noticias_facebook():
             published_parsed = entry.get("published_parsed")
 
             if not ya_enviada(link):
-                if es_noticia_reciente(published_parsed, horas_maximas=24):
+                if es_noticia_reciente(
+                    published_parsed, horas_maximas=24
+                ) and es_de_ubicacion_interes(contenido):
                     mensaje = (
                         f"🔵 <b>Publicación en Facebook ({fb['nombre']})</b>\n\n"
                         f"{contenido}\n\n"
                         f"🔗 <a href='{link}'>Ver publicación en Facebook</a>"
                     )
                     enviar_telegram(mensaje)
-                registrar_enviada(link)
+                registrar_noticia_completa(
+                    link, f"Facebook ({fb['nombre']}): {contenido[:50]}"
+                )
+
 
 def buscar_noticias_youtube():
-    """Busca transmisiones en vivo y videos de noticias recientes en YouTube sobre tus sectores."""
+    """Busca transmisiones y reportajes de YouTube filtrados por zona."""
     for kw in KEYWORDS:
-        # Operador site:youtube.com + "live" para priorizar transmisiones e informes en vivo
-        query = urllib.parse.quote(f'site:youtube.com "{kw}" live Ecuador when:1d')
+        query = urllib.parse.quote(
+            f'site:youtube.com "{kw}" (Guayas OR Ecuador) when:1d'
+        )
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=es-419&gl=EC&ceid=EC:es-419"
 
         feed = feedparser.parse(rss_url)
@@ -199,18 +236,18 @@ def buscar_noticias_youtube():
                     published_parsed, horas_maximas=24
                 ) and es_de_ubicacion_interes(title):
                     mensaje = (
-                        f"🔴 <b>Transmisión / Video en YouTube ({kw.capitalize()})</b>\n\n"
+                        f"🔴 <b>Video / Transmisión YouTube ({kw.title()})</b>\n\n"
                         f"{title}\n\n"
                         f"🎬 <a href='{link}'>Ver en YouTube</a>"
                     )
                     enviar_telegram(mensaje)
 
-                # Registrar para el Dashboard y evitar duplicados
-                registrar_noticia_completa(
-                    link, f"YouTube: {title[:60]}"
-                )
+                registrar_noticia_completa(link, f"YouTube: {title[:60]}")
+
+
 if __name__ == "__main__":
-    print("Iniciando búsqueda de noticias recientes (últimas 24h)...")
+    print("Iniciando búsqueda de noticias filtradas por ubicación exacta...")
     buscar_noticias_google()
     buscar_noticias_facebook()
+    buscar_noticias_youtube()
     print("Búsqueda finalizada.")
