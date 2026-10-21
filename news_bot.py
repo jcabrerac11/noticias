@@ -21,6 +21,12 @@ KEYWORDS = [
     "Vía a la Costa",
     "Via a la Costa",
     "Ciudad de Dios",
+    "San Isidro",
+    "San Antonio",
+    "Safando",
+    "San Lorenzo",
+    "Vía a san juan",
+    "Vía a san antonio",
 ]
 
 FACEBOOK_FEEDS = [
