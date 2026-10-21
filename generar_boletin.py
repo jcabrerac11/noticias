@@ -25,6 +25,8 @@ COORDENADAS_SECTORES = {
     "progreso": "-2.3922, -80.3789",
     "chongon": "-2.2483, -80.0811",
     "chongón": "-2.2483, -80.0811",
+    "cerecita": "-2.333426, -80270089",
+    "ciudad de dios": "-2.074946, -80.004669",
 }
 
 
