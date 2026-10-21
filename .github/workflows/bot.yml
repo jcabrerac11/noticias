@@ -47,3 +47,5 @@ jobs:
         with:
           commit_message: "Actualización automática del Dashboard y base de datos"
           file_pattern: "index.html noticias.db"
+          skip_fetch: false
+          internal_git_options: '--rebase'
